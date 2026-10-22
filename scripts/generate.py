@@ -130,6 +130,7 @@ def generate(archive, output_dir, check=False):
         png = rasterize(svg, path, width, height)
         groups.setdefault(key, []).append(f"{identifier}\t{base64.b64encode(png).decode()}\n")
     files = {f"{key}.tsv": "".join(rows) for key, rows in sorted(groups.items())}
+    files["groups.txt"] = "".join(f"{key}\n" for key in sorted(groups))
     stale = {path.name for path in output_dir.glob("*.tsv") if path.name not in files}
     if check:
         mismatched = [name for name, content in files.items()
