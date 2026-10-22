@@ -125,48 +125,31 @@ def add_entry(entries, seen, key, identifier, path, svg, width, height):
 
 
 def generate(archive, output_dir, check=False):
-    entries = icon_entries(archive)
-    header = f"# Generated from {SOURCE_REPO} (MIT). Do not edit manually.\n"
-    common = (header + 'require "base64"\nrequire "crimage"\n\n'
-              f'module Icon\n  module {MODULE}\n'
-              '    # Shared CrImage images. Copy before modifying.\n'
-              '    private def self.decode_png(encoded : String)\n'
-              '      CrImage.read(IO::Memory.new(Base64.decode(encoded)))\n'
-              '    end\n  end\nend\n')
-    files = {"common.cr": common}
     groups = {}
-    for key, identifier, path, svg, width, height in entries:
+    for key, identifier, path, svg, width, height in icon_entries(archive):
         png = rasterize(svg, path, width, height)
-        groups.setdefault(key, []).append((identifier, path, width, height, base64.b64encode(png).decode()))
-    for key, icons in sorted(groups.items()):
-        lines = [header.rstrip(), 'require "./common"', '', 'module Icon', f'  module {MODULE}']
-        for identifier, path, width, height, encoded in icons:
-            lines += [f'    # {path.split("/", 1)[-1]} ({width}x{height})',
-                      f'    {identifier} = decode_png("{encoded}")']
-        files[f"{key}.cr"] = "\n".join(lines + ['  end', 'end', ''])
-        print(f"Rendered {key}: {len(icons)} icons", flush=True)
-    files[f"icon-{PACKAGE}.cr"] = header + "".join(f'require "./{key}"\n' for key in sorted(groups))
-    stale = {p.name for p in output_dir.glob("[0-9]*.cr") if p.name not in files}
-    stale |= {p.name for p in output_dir.glob("*.cr") if p.name not in files}
+        groups.setdefault(key, []).append(f"{identifier}\t{base64.b64encode(png).decode()}\n")
+    files = {f"{key}.tsv": "".join(rows) for key, rows in sorted(groups.items())}
+    stale = {path.name for path in output_dir.glob("*.tsv") if path.name not in files}
     if check:
         mismatched = [name for name, content in files.items()
                       if not (output_dir / name).is_file() or (output_dir / name).read_text() != content]
         if mismatched or stale:
             raise ValueError(f"Generated files differ: {mismatched}; stale files: {sorted(stale)}")
-        print(f"OK: {len(entries)} images, generated files match")
+        print(f"OK: {sum(map(len, groups.values()))} icons, data files match")
     else:
         output_dir.mkdir(parents=True, exist_ok=True)
         for name in stale:
             (output_dir / name).unlink()
         for name, content in files.items():
             (output_dir / name).write_text(content)
-        print(f"Generated {len(entries)} images in {len(files)} files")
+        print(f"Generated {sum(map(len, groups.values()))} icons in {len(files)} data files")
 
 
 if __name__ == "__main__":
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("archive", type=Path, help=f"Source ZIP from https://github.com/{SOURCE_REPO}")
-    parser.add_argument("--output-dir", type=Path, default=Path(__file__).resolve().parents[1] / "src")
+    parser.add_argument("--output-dir", type=Path, default=Path(__file__).resolve().parents[1] / "src/data")
     parser.add_argument("--check", action="store_true")
     args = parser.parse_args()
     generate(args.archive, args.output_dir, args.check)
